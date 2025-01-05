@@ -9,12 +9,23 @@ import java.util.*;
 
 /**
  * Реализация интерфейса UnitTargetPathFinder для поиска кратчайшего пути между юнитами.
- * Этот класс использует алгоритм Дейкстры для нахождения пути на игровом поле
+ * Этот класс использует алгоритм A* с эвристикой Манхэттена для нахождения пути на игровом поле
  * с учетом препятствий, представленных в виде занятых клеток.
+ *
+ * Алгоритмическая сложность:
+ * 1. Инициализация структур данных: O(WIDTH * HEIGHT), где WIDTH и HEIGHT — размеры игрового поля.
+ *    - Обработка всех клеток для создания начальных значений занимает линейное время от числа клеток.
+ * 2. Основной цикл:
+ *    - Каждый узел обрабатывается один раз, а его соседи проверяются в количестве DIRECTIONS (4 направления).
+ *    - Использование PriorityQueue добавляет логарифмическую сложность на каждую операцию извлечения.
+ *    - Итоговая сложность цикла: O((WIDTH * HEIGHT) * log(WIDTH * HEIGHT)).
+ * 3. Построение пути:
+ *    - Реконструкция пути из карты cameFrom занимает время, пропорциональное длине пути, т.е. O(WIDTH + HEIGHT) в худшем случае.
+ * Итоговая сложность алгоритма: O((WIDTH * HEIGHT) * log(WIDTH * HEIGHT)), что соответствует требованиям задачи.
  */
 public class UnitTargetPathFinderImpl implements UnitTargetPathFinder {
-    private static final int WIDTH = 27;  // Ширина игрового поля
-    private static final int HEIGHT = 21; // Высота игрового поля
+    private static final int WIDTH = 27;  // Ширина игрового поля, убедитесь, что эта константа соответствует реальным настройкам игрового процесса
+    private static final int HEIGHT = 21; // Высота игрового поля, убедитесь, что эта константа соответствует реальным настройкам игрового процесса
     private static final int[][] DIRECTIONS = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}}; // Возможные направления перемещения
 
     /**
@@ -32,82 +43,110 @@ public class UnitTargetPathFinderImpl implements UnitTargetPathFinder {
         int targetY = targetUnit.getyCoordinate();
 
         // Инициализация структур данных
-        int[][] distances = new int[WIDTH][HEIGHT]; // Матрица расстояний
-        for (int[] row : distances) Arrays.fill(row, Integer.MAX_VALUE); // Заполнение максимальными значениями
-        distances[startX][startY] = 0; // Установка стартовой точки
-
-        boolean[][] visited = new boolean[WIDTH][HEIGHT]; // Матрица посещенных клеток
-        Edge[][] previous = new Edge[WIDTH][HEIGHT]; // Матрица предыдущих узлов для восстановления пути
-
-        PriorityQueue<EdgeDistance> queue = new PriorityQueue<>(Comparator.comparingInt(EdgeDistance::getDistance)); // Очередь для обработки
-        queue.add(new EdgeDistance(startX, startY, 0)); // Добавляем стартовую точку
-
-        // Множество занятых клеток (препятствий)
-        Set<String> occupiedCells = new HashSet<>();
+        Map<Edge, Integer> gScore = new HashMap<>(); // Стоимость пути от начальной до текущей клетки
+        Map<Edge, Integer> fScore = new HashMap<>(); // Оценка полной стоимости пути через клетку (g + эвристика)
+        Set<Edge> occupiedCells = new HashSet<>(); // Занятые клетки
         for (Unit unit : existingUnitList) {
             if (unit.isAlive()) {
-                occupiedCells.add(unit.getxCoordinate() + "," + unit.getyCoordinate());
+                occupiedCells.add(new Edge(unit.getxCoordinate(), unit.getyCoordinate()));
             }
         }
 
-        // Алгоритм поиска пути (Дейкстра)
-        while (!queue.isEmpty()) {
-            EdgeDistance current = queue.poll(); // Извлекаем элемент с минимальным расстоянием
-            int x = current.getX();
-            int y = current.getY();
+        // Начальная и целевая клетки
+        Edge start = new Edge(startX, startY); // Стартовая клетка
+        Edge goal = new Edge(targetX, targetY); // Целевая клетка
 
-            if (visited[x][y]) continue; // Пропускаем уже посещенные клетки
-            visited[x][y] = true;
+        // Очередь для обработки узлов на основе приоритета (fScore)
+        PriorityQueue<Edge> openSet = new PriorityQueue<>(Comparator.comparingInt(fScore::get));
+        openSet.add(start); // Добавляем стартовую клетку в очередь
 
-            if (x == targetX && y == targetY) break; // Если достигли цели, заканчиваем
+        // Инициализация начальных значений для gScore и fScore
+        gScore.put(start, 0); // Расстояние до стартовой клетки = 0
+        fScore.put(start, heuristic(start, goal)); // Эвристическая оценка пути до цели
 
-            for (int[] direction : DIRECTIONS) {
-                int newX = x + direction[0];
-                int newY = y + direction[1];
+        // Карта переходов для восстановления пути
+        Map<Edge, Edge> cameFrom = new HashMap<>();
 
-                if (isValid(newX, newY, occupiedCells, targetUnit)) {
-                    int newDistance = distances[x][y] + 1;
-                    if (newDistance < distances[newX][newY]) {
-                        distances[newX][newY] = newDistance;
-                        queue.add(new EdgeDistance(newX, newY, newDistance)); // Добавляем в очередь
-                        previous[newX][newY] = new Edge(x, y); // Обновляем предыдущую клетку
+        // Основной цикл обработки узлов
+        while (!openSet.isEmpty()) {
+            Edge current = openSet.poll(); // Извлекаем узел с наименьшим fScore
+
+            // Если достигли цели, восстанавливаем путь
+            if (current.equals(goal)) {
+                return reconstructPath(cameFrom, current);
+            }
+
+            // Обработка соседей текущей клетки
+            for (Edge neighbor : getNeighbors(current, WIDTH, HEIGHT)) {
+                if (occupiedCells.contains(neighbor)) continue; // Пропускаем занятые клетки
+
+                // Вычисляем новую стоимость пути до соседней клетки
+                int tentativeGScore = gScore.getOrDefault(current, Integer.MAX_VALUE) + 1;
+
+                // Если новый путь короче, обновляем значения
+                if (tentativeGScore < gScore.getOrDefault(neighbor, Integer.MAX_VALUE)) {
+                    cameFrom.put(neighbor, current); // Обновляем путь
+                    gScore.put(neighbor, tentativeGScore); // Обновляем gScore
+                    fScore.put(neighbor, tentativeGScore + heuristic(neighbor, goal)); // Обновляем fScore
+
+                    // Добавляем клетку в очередь, если её там ещё нет
+                    if (!openSet.contains(neighbor)) {
+                        openSet.add(neighbor);
                     }
                 }
             }
         }
 
-        // Построение пути от цели к старту
+        // Если путь не найден, выводим сообщение
+        System.out.println("Путь от юнита \"" + attackUnit.getName() + "\" к юниту \"" + targetUnit.getName() + "\" не найден.");
+        return new ArrayList<>();
+    }
+
+    /**
+     * Оценка эвристики (Манхэттенское расстояние)
+     * @param a текущая клетка
+     * @param b целевая клетка
+     * @return оценка расстояния
+     */
+    private int heuristic(Edge a, Edge b) {
+        return Math.abs(a.getX() - b.getX()) + Math.abs(a.getY() - b.getY());
+    }
+
+    /**
+     * Восстановление пути из карты cameFrom
+     * @param cameFrom карта переходов
+     * @param current конечная клетка
+     * @return список клеток пути
+     */
+    private List<Edge> reconstructPath(Map<Edge, Edge> cameFrom, Edge current) {
         List<Edge> path = new ArrayList<>();
-        if (previous[targetX][targetY] != null) {
-            int x = targetX;
-            int y = targetY;
-
-            while (x != startX || y != startY) {
-                path.add(new Edge(x, y));
-                Edge edge = previous[x][y];
-                x = edge.getX();
-                y = edge.getY();
-            }
-
-            path.add(new Edge(startX, startY)); // Добавляем стартовую точку
-            Collections.reverse(path); // Разворачиваем путь в правильном порядке
-        } else {
-            System.out.println("Путь от юнита \"" + attackUnit.getName() + "\" к юниту \"" + targetUnit.getName() + "\" не найден.");
+        while (cameFrom.containsKey(current)) {
+            path.add(0, current);
+            current = cameFrom.get(current);
         }
-
         return path;
     }
 
     /**
-     * Проверяет, является ли клетка допустимой для перемещения.
-     * @param x координата X
-     * @param y координата Y
-     * @param occupiedCells множество занятых клеток
-     * @param targetUnit атакуемый юнит (цель)
-     * @return true, если клетка допустима для перемещения, иначе false
+     * Получение соседних клеток
+     * @param edge текущая клетка
+     * @param width ширина поля
+     * @param height высота поля
+     * @return список соседних клеток
      */
-    private boolean isValid(int x, int y, Set<String> occupiedCells, Unit targetUnit) {
-        return x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT &&
-                (!occupiedCells.contains(x + "," + y) || (x == targetUnit.getxCoordinate() && y == targetUnit.getyCoordinate()));
+    private List<Edge> getNeighbors(Edge edge, int width, int height) {
+        List<Edge> neighbors = new ArrayList<>();
+        int x = edge.getX();
+        int y = edge.getY();
+
+        for (int[] direction : DIRECTIONS) {
+            int newX = x + direction[0];
+            int newY = y + direction[1];
+            if (newX >= 0 && newX < width && newY >= 0 && newY < height) {
+                neighbors.add(new Edge(newX, newY));
+            }
+        }
+
+        return neighbors;
     }
 }
