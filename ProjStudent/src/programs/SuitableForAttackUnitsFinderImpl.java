@@ -5,6 +5,7 @@ import com.battle.heroes.army.programs.SuitableForAttackUnitsFinder;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Реализация интерфейса SuitableForAttackUnitsFinder.
@@ -26,27 +27,20 @@ public class SuitableForAttackUnitsFinderImpl implements SuitableForAttackUnitsF
 
         // Направление проверки: -1 для атаки левой армии, 1 для атаки правой армии
         int direction = isLeftArmyTarget ? -1 : 1;
-        // Целевой ряд, который не проверяется на блокировку
-        int targetRow = isLeftArmyTarget ? 2 : 0;
 
         // Перебор всех рядов
         for (int rowIndex = 0; rowIndex < unitsByRow.size(); rowIndex++) {
-            // Перебор всех юнитов в текущем ряду
-            for (Unit unit : unitsByRow.get(rowIndex)) {
-                // Проверяем, жив ли юнит
-                if (unit.isAlive()) {
-                    // Ряд, с которого может быть блокировка
-                    int blockingRow = rowIndex + direction;
+            List<Unit> row = unitsByRow.get(rowIndex);
+            Unit edgeUnit = isLeftArmyTarget ? getRightmostUnit(row) : getLeftmostUnit(row);
 
-                    // Проверяем, блокирован ли юнит
-                    boolean isBlocked = blockingRow >= 0 && blockingRow < unitsByRow.size() &&
-                            unitsByRow.get(blockingRow).stream()
-                                    .anyMatch(otherUnit -> otherUnit.getyCoordinate() == unit.getyCoordinate() && otherUnit.isAlive());
+            if (edgeUnit != null && edgeUnit.isAlive()) {
+                int blockingRow = rowIndex + direction;
+                boolean isBlocked = blockingRow >= 0 && blockingRow < unitsByRow.size() &&
+                        unitsByRow.get(blockingRow).stream()
+                                .anyMatch(otherUnit -> otherUnit.getyCoordinate() == edgeUnit.getyCoordinate() && otherUnit.isAlive());
 
-                    // Если юнит не блокирован или находится в крайнем ряду, добавляем его
-                    if (!isBlocked || rowIndex == targetRow) {
-                        suitableUnits.add(unit);
-                    }
+                if (!isBlocked) {
+                    suitableUnits.add(edgeUnit);
                 }
             }
         }
@@ -57,5 +51,36 @@ public class SuitableForAttackUnitsFinderImpl implements SuitableForAttackUnitsF
         }
 
         return suitableUnits;
+    }
+
+    /**
+     * Возвращает правого крайнего живого юнита в ряду.
+     *
+     * @param row список юнитов в ряду.
+     * @return правый крайний живой юнит или null, если такого нет.
+     */
+    private Unit getRightmostUnit(List<Unit> row) {
+        for (int i = row.size() - 1; i >= 0; i--) {
+            Unit unit = row.get(i);
+            if (unit != null && unit.isAlive()) {
+                return unit;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Возвращает левого крайнего живого юнита в ряду.
+     *
+     * @param row список юнитов в ряду.
+     * @return левый крайний живой юнит или null, если такого нет.
+     */
+    private Unit getLeftmostUnit(List<Unit> row) {
+        for (Unit unit : row) {
+            if (unit != null && unit.isAlive()) {
+                return unit;
+            }
+        }
+        return null;
     }
 }
