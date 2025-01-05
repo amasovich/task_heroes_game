@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="NewObf:jar">
+    <output-path>$PROJECT_DIR$/ProjStudent/output</output-path>
+    <root id="archive" name="ProjStudent.jar">
+      <element id="module-output" name="ProjStudent" />
+    </root>
+  </artifact>
+</component>
