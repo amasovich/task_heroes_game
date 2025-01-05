@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/heroes_task.iml" filepath="$PROJECT_DIR$/heroes_task.iml" />
+      <module fileurl="file://D:/Algo/task_heroes/ProjStudent/ProjStudent.iml" filepath="D:/Algo/task_heroes/ProjStudent/ProjStudent.iml" />
     </modules>
   </component>
 </project>
